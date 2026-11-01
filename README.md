@@ -97,7 +97,7 @@ scripts/                 apollo, talk, speak, audio diagnostics
 docs/                    ARCHITECTURE.md, REMINDER_API.md, measurements
 ```
 
-## Run it
+## Quick start
 
 ```bash
 git clone https://github.com/Vector26/apollo.git && cd apollo
@@ -107,26 +107,17 @@ cp orchestrator/config.example.yaml orchestrator/config.yaml   # then edit
 scripts/apollo talk
 ```
 
-Model weights, reference voice recordings and personal data are not included. Add a 10 to 30 second recording of a voice you have permission to use at `models/refs/default.wav`. Chatterbox Turbo weights belong in the directory set by `tts.model_dir`; Apollo loads them locally and does not download them. Paths accept `~` and otherwise resolve relative to the repository, or to `APOLLO_HOME` when set.
+`config.example.yaml` is the map for audio devices, model routes and integrations. Add your model assets, choose a voice, connect the services you want, and start talking.
 
-I have not yet verified the installation process on a completely clean machine.
+## Development
 
-Tests need no hardware or network:
+The core test suite runs without audio hardware or network access:
 
 ```bash
 cd orchestrator && python -m unittest discover
 ```
 
-## Honest status
-
-This is a personal system published in the form I use it. It is tested on Ubuntu, PipeWire and one consumer GPU.
-
-- The tool layer rides on the Virtual Self brain path. Without that service you get a plain OpenAI-compatible brain and no tools.
-- Reminders need a service that speaks the small HTTP contract in [`docs/REMINDER_API.md`](docs/REMINDER_API.md). The server is not in this repository.
-- The Plane integration currently assumes the ticket prefix `LP`; making it configurable is still pending.
-- Two tests are skipped on a clean checkout because they need model weights or a private agent registry.
-- Voice latency is not instant. On the fast-agent route I measured end-of-speech to first audio at p50 2,846 ms and p90 3,609 ms (`n=32`, 2026-11-01). Most of that time is waiting for the first model token. See [`docs/research`](docs/research/04-local-measurements-and-prompts.md).
-- The voice presets point at community voice-conversion weights for fictional characters. Check their licences, or use a voice of your own.
+For the full system design, start with [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md). The reminder service contract is documented in [`docs/REMINDER_API.md`](docs/REMINDER_API.md).
 
 ## License
 
