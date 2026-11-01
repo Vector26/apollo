@@ -1,0 +1,179 @@
+# Apollo configuration (example). Copy to orchestrator/config.yaml and edit.
+# Paths: ~ expands; a relative path is relative to APOLLO_HOME (the repo root unless you set the env var).
+# Secrets are never stored here: they are read from the env vars / files named below.
+
+# Vox configuration
+
+audio:
+  sample_rate: 16000        # internal/VAD/Whisper rate
+  capture_rate: 48000       # DWM-123 receiver native rate (48k only)
+  channels: 1
+  vad_threshold: 0.525
+  silence_ms: 200           # endpoint: pause before the turn commits
+  min_speech_ms: 250
+  partial_ms: 600           # partial transcript cadence while speaking
+  barge_in_ms: 600          # sustained speech needed to interrupt Jarvis (only if barge_in: true)
+  barge_in: false           # false: no open-mic barge-in (echo on open speaker)
+  interrupt_keywords: true  # while Jarvis speaks: say wait, stop, listen, hold on, pause, etc. → stop and listen
+  interrupt_partial_ms: 450 # how often to check your speech for those words during playback
+  lead_silence_ms: 1000     # silence before the first audio of every playback session
+  speculate_ms: 96          # start STT+LLM+TTS at this much silence; audio released at silence_ms
+  filler_after_ms: 0        # 0 = never fill silence; >0: no answer audio by then → play filler_line
+  filler_line: "One moment."
+  acks:                     # v2: short pre-rendered line (zero GPU) when the brain is still silent after after_ms
+    enabled: true           # only for ops/deep questions (see acks.py); small talk gets none
+    after_ms: 1000
+  echo_gate:                # v2: drop a transcript that repeats what the assistant just said (word-pair overlap)
+    enabled: true
+    window_s: 8
+    drop_at: 0.7
+    min_words: 4
+  live_captions: false      # "hearing: …" partial transcripts (costs Whisper time mid-utterance)
+  hold_fragment_ms: 2500    # an utterance ending on "and", "the", "I just"… waits this long for its continuation
+  slow_turn_ms: 1500        # flag turns slower than this in the UI
+  echo_tail_ms: 500         # keep ignoring the mic this long after playback (reverb + latency)
+  device_wait_s: 30         # at start, wait up to this long for PipeWire and the mic (cold boot), then fall back
+  boot_wait_s: 120          # the boot job waits longer: USB and Bluetooth enumerate slowly after power-on
+  bluetooth_connect: true   # try to connect paired Bluetooth speakers listed above at start (6 s cap)
+  device_watch: true        # while running: re-pick the mic if it is unplugged / the preferred one returns
+
+bluetooth:  # name kept for compatibility; any PipeWire sink/source works
+  speaker_names:                    # first one connected wins
+    - "My Bluetooth Earbuds"                 # exact PipeWire sink name
+    - "My Analog Speaker"                    # fallback sink
+  mic_name: "My USB Mic"                                 # exact PipeWire source name
+  mic_fallbacks:                    # tried in order if mic_name is not there; then any USB mic, then the system default input
+    - "Built-in Mic"
+
+stt:
+  engine: parakeet          # parakeet = CPU int8 (frees GPU for voice); whisper = faster-whisper below
+  model: nemo-parakeet-tdt-0.6b-v3
+  quantization: int8
+  threads: 4
+  # whisper-only (set engine: whisper to revert):
+  # model: "models/faster-whisper-large-v3-turbo-ct2"
+  # device: "auto"          # cuda if >=4GB VRAM free beside the LLM, else cpu
+  # compute_type: "int8"
+
+tts:
+  profile: jarvis
+  talk_profile: ultron   # `apollo talk` with no --voice
+  model_dir: "models/chatterbox-turbo"
+  ref_audio: "models/refs/default.wav"   # your own 10-30 s reference clip (not shipped)
+  device: "auto"
+
+voicebox:
+  # legacy/admin only — the live path no longer goes through Voicebox HTTP
+  base_url: "http://127.0.0.1:17600"
+  whisper_model: "turbo"
+  tts_profile: "jarvis"
+  tts_engine: "chatterbox_turbo"
+
+llm:
+  base_url: "http://127.0.0.1:8081/v1"
+  model: "hauhaucs-iq3"  # local 35B-A3B MoE IQ3_M — already on disk, 84 tok/s
+  max_tokens: 512
+  temperature: 0.7
+  system_prompt: |
+    You are a helpful conversational assistant. Keep replies concise and natural for spoken dialogue.
+    When the user discusses plans, ideas, or workflows, think about structure but speak naturally.
+    Do not use markdown, bullet points, or formatting in your spoken replies.
+    You have long-term memory of durable facts from past sessions. Use them when they matter.
+    If you are unsure whether you remember something, say so — do not invent memories.
+
+# Alternative brains a voice profile can select with `brain:` (keys override llm:)
+brains:
+  vself:
+    # Virtual Self is the brain: it composes persona + memories and records every
+    # spoken exchange; this side only streams the reply and speaks it.
+    kind: vself
+    api_url: "http://127.0.0.1:8090"         # your Virtual Self API
+    token_env: VSM_BOOTSTRAP_TOKEN
+    token_file: "~/.config/apollo/vself.env"
+    prepare_timeout_s: 4
+    local:                                  # local brain through modelq (queue + GPU pause aware)
+      base_url: "http://127.0.0.1:8181/v1"
+      model: "local-qwen3.6-35b"            # an id modelq keeps on the local brain
+      max_tokens: 200
+      temperature: 0.4
+      timeout_s: 20
+    tools:                                  # Apollo's abstracted tools (agent_tools.py); no shell
+      gateway_url: "http://127.0.0.1:8190"
+      token_file: "~/.config/apollo/agent-gateway.token"
+      registry: "~/.config/apollo/agents/registry.yaml"
+      notifier_url: "http://127.0.0.1:8001/notify"
+      reminders:                              # Telemon timed reminders (same JSON as Telegram bot)
+        enabled: true
+        base_url: "http://127.0.0.1:8001"
+        tz: "UTC"
+      notes_dir: "~/apollo-notes"
+      state_dir: "~/.local/state/apollo/tools"
+      confirm: [notify, notes_write]        # read back and wait for "yes": a message to the phone, words added to an existing note
+      plane:                                # self-hosted Plane.so (MyBoard board) — voice CRUD
+        enabled: true
+        base_url: http://127.0.0.1:8082/api/v1
+        api_key_env: PLANE_API_KEY
+        api_key_file: ~/.config/apollo/plane.env
+        workspace_slug: my-workspace
+        project_id: 00000000-0000-0000-0000-000000000000   # your Plane project UUID
+        project_label: MyBoard
+      aliases:                              # how the mic hears each agent (agent: [spellings]); add what it mishears
+        dume: [dummy, dumb e, diom, dium, doom e, dum e]
+    idle_end_s: 600                         # quiet this long → the conversation is closed and filed in vself
+    initiative:                             # v2.1: Jarvis now and then speaks up unprompted (concern, dry sarcasm)
+      enabled: true                         # only while Composer/OpenRouter is the one answering; never the local brain
+      min_idle_s: 15                        # owner quiet at least this long (and at most max_idle_s) in a live conversation
+      max_idle_s: 240
+      min_gap_s: 240                        # between two asides
+      max_per_hour: 3
+      roll_every_s: 60                      # one weighted roll per quiet spell, not per tick
+      base_p: 0.12                          # raised by: late hour, long session, tired, risky request
+      after_none_s: 150                     # the model said NONE: wait this long before asking again
+    personality:                            # Prometheus' own growing self (vself still owns the owner's memory)
+      enabled: true
+      state_file: "~/.local/state/apollo/self.json"
+    cursor:                                 # Composer 2.5 Fast over one persistent `cursor-agent acp` session (cursor_brain.py)
+      enabled: true
+      model_id: "composer-2.5[fast=true]"   # strictly the fast variant
+      hedge_after_s: 2.2                    # silent this long -> OpenRouter (then local) starts beside it; first word wins
+      give_up_s: 6                          # hard stop for a turn with no word at all
+      max_words: 140                        # cut at a sentence end: a spoken reply, not an essay
+      rotate_turns: 24                      # fresh session this often (persona re-sent), keeps context short
+      sandbox_dir: "~/.local/state/apollo/composer-sandbox"   # empty on purpose: nothing for it to read
+    prefer: cursor                          # cursor = Composer first, OpenRouter second, local third (cloud = skip Composer)
+    queue_url: "http://127.0.0.1:8181/queue" # local-first only: busy or paused → cloud straight away
+    local_first_token_ms: 700               # local must open cleanly by then, else cloud (~0.5s more)
+    cloud: openrouter                       # brains.openrouter below
+  openrouter:
+    base_url: "https://openrouter.ai/api/v1"
+    # ~400ms to first token from this host. qwen/qwen3-30b-a3b-instruct-2507 is faster (~380ms)
+    # but refuses play (repeat-after-me movie lines) as threats, so it must not join the race.
+    model: "google/gemma-4-31b-it"
+    api_key_env: OPENROUTER_API_KEY
+    api_key_file: "~/.config/apollo/openrouter.env"
+    max_tokens: 160
+    timeout_s: 8          # fail a stuck call fast instead of the client's 600s default
+    max_retries: 1
+    fallback_to_local: true   # every route failed before a token (network blip) → llm: above
+    extra_body:
+      provider: {sort: latency}
+      reasoning: {enabled: false}
+    hedge:                # raced in parallel; first token wins, the loser is closed
+      - model: "qwen/qwen3.6-35b-a3b"
+        extra_body:
+          provider: {sort: latency}
+          reasoning: {enabled: false}
+
+notes:
+  output_dir: "notes"
+  auto_dump_interval_minutes: 5
+  trigger_phrases:
+    - "take notes"
+    - "dump notes"
+    - "save notes"
+    - "write notes"
+
+memory:
+  dir: "memory"
+  keep_turns: 8
+  fact_limit: 8

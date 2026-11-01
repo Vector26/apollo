@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+set -euo pipefail
+ORCH="$(cd "$(dirname "$(readlink -f "$0")")/../orchestrator" && pwd)"
+export PYTHONPATH="$ORCH"
+exec "$ORCH/.venv/bin/python" -m apollo_cli "$@"

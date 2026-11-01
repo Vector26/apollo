@@ -1,0 +1,61 @@
+# Voice profiles for Vox / Apollo (merged TTS + optional RVC)
+# Paths are relative to VOX_ROOT unless absolute.
+
+profiles:
+  jarvis:
+    display_name: Jarvis
+    ref_audio: models/jarvis_ref/jarvis.wav
+    brain: vself
+    rvc_enabled: false
+    chatterbox:
+      temperature: 0.8
+      top_k: 1000
+      top_p: 0.95
+      repetition_penalty: 1.2
+      exaggeration: null
+
+  ultron:
+    display_name: Ultron
+    ref_audio: models/jarvis_ref/jarvis.wav
+    speaking_rate: 0.82
+    text_pace: measured
+    brain: vself               # config.yaml brains.vself — Ultron is only the voice; vself is who speaks
+    rvc_enabled: true
+    rvc:
+      model_dir: models/rvc/ultron
+      pitch: 0
+      index_rate: 0.75
+      filter_radius: 3
+      rms_mix_rate: 0.25
+      protect: 0.5
+      method: rmvpe
+      version: v2
+      device: auto
+    chatterbox:
+      temperature: 0.68
+      top_k: 800
+      top_p: 0.88
+      repetition_penalty: 1.22
+      exaggeration: 0.55
+
+  robert_california:
+    display_name: Robert California
+    ref_audio: models/refs/robert_california.wav
+    brain: vself
+    rvc_enabled: false
+    chatterbox:
+      temperature: 0.85
+      top_k: 1000
+      top_p: 0.95
+      repetition_penalty: 1.1
+      exaggeration: 0.85
+
+defaults:
+  model_dir: models/chatterbox-turbo
+  device: auto
+
+fetch:
+  ultron:
+    primary_url: https://huggingface.co/Hazza1/UltronV1/resolve/main/ultronv1.zip
+    fallback_url: https://huggingface.co/Zeal-anton-ski/Sage/resolve/main/Ultron.zip
+    dest_dir: models/rvc/ultron

@@ -1,0 +1,10 @@
+.venv/
+__pycache__/
+*.pyc
+orchestrator/config.yaml
+*.env
+*.token
+models/
+notes/
+memory/
+*.log

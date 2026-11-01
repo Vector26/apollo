@@ -1,0 +1,3 @@
+# Digitek DWM-123 / Jieli 4c4a:4155 — keep USB awake (avoids dropouts after idle).
+# Install: sudo cp 99-jieli-usb-mic.rules /etc/udev/rules.d/ && sudo udevadm control --reload
+SUBSYSTEM=="usb", ATTR{idVendor}=="4c4a", ATTR{idProduct}=="4155", TEST=="power/control", ATTR{power/control}="on"

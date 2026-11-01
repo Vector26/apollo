@@ -1,0 +1,82 @@
+#!/usr/bin/env bash
+# Mic stack diagnostic — speak during calibration + capture.
+set -euo pipefail
+PY="$ORCH/.venv/bin/python"
+ORCH="$(cd "$(dirname "$(readlink -f "$0")")/../orchestrator" && pwd)"
+WAV=/tmp/micdiag_$$.wav
+export PYTHONPATH="$ORCH"
+
+echo "=== Vox mic diagnostic ($(date)) ==="
+echo
+echo "-- USB (Jieli 4c4a:4155) --"
+lsusb -d 4c4a:4155 2>/dev/null || echo "MISSING: dongle not on USB"
+echo
+echo "-- PipeWire unmute + ALSA defaults --"
+"$PY" -c "from usb_mic_linux import apply_usb_mic_linux_fixes; import json; print(json.dumps(apply_usb_mic_linux_fixes(), indent=2))"
+SRC=$("$PY" -c "from usb_mic_linux import _pipewire_usb_source_id; print(_pipewire_usb_source_id() or '')")
+CARD=$("$PY" -c "from usb_mic_linux import _card_index; print(_card_index() or '')")
+if [[ -n "$CARD" ]]; then
+  echo "-- ALSA card $CARD (after defaults) --"
+  amixer -c "$CARD" cget numid=2 2>/dev/null | grep ": values" || true
+  amixer -c "$CARD" cget numid=4 2>/dev/null | grep ": values" || true
+fi
+echo
+echo "-- Default input --"
+wpctl status 2>/dev/null | sed -n '/Sources:/,/Streams:/p' | head -8
+[[ -n "$SRC" ]] && wpctl get-volume "$SRC" 2>/dev/null || true
+echo
+echo "-- ALSA calibration (KEEP TALKING for ~5s) --"
+echo "   Tests capture switch on/off × AGC on/off; picks the loudest."
+"$PY" -c "
+from usb_mic_linux import calibrate_alsa_mic, _card_index, _pipewire_usb_source_id
+import json
+c = _card_index()
+s = _pipewire_usb_source_id()
+if c and s:
+    print(json.dumps(calibrate_alsa_mic(c, s, seconds=1.2), indent=2))
+else:
+    print('skip: no card or pipewire source')
+"
+echo
+echo "-- Final 5s capture (SPEAK NOW) --"
+rm -f "$WAV"
+TARGET="${SRC:-@DEFAULT_AUDIO_SOURCE@}"
+pw-record --target "$TARGET" --rate 48000 --channels 1 --format s16 "$WAV" &
+rec_pid=$!
+for i in 5 4 3 2 1; do echo -ne "\r  recording… $i (speak) "; sleep 1; done
+echo
+kill -INT "$rec_pid" 2>/dev/null || true
+wait "$rec_pid" 2>/dev/null || true
+if [[ ! -s "$WAV" ]]; then
+  echo "  ERROR: no audio file captured."
+  exit 1
+fi
+"$PY" - "$WAV" <<'PY'
+import sys, wave, numpy as np
+path = sys.argv[1]
+w = wave.open(path, "rb")
+pcm = np.frombuffer(w.readframes(w.getnframes()), dtype=np.int16).astype(np.float32) / 32768
+sr = w.getframerate()
+peak = float(np.max(np.abs(pcm)))
+rms = float(np.sqrt(np.mean(pcm**2)))
+db = 20 * np.log10(max(rms, 1e-9))
+hop = int(sr * 0.02)
+blocks = [pcm[i:i+hop] for i in range(0, len(pcm)-hop, hop)]
+active = sum(1 for b in blocks if np.sqrt(np.mean(b**2)) > 0.01)
+print(f"  peak {peak*100:.2f}%  rms {rms*100:.4f}%  (~{db:.0f} dBFS)")
+print(f"  active 20ms blocks (rms>1%): {active}/{len(blocks)}")
+if peak < 0.005:
+    print("  VERDICT: still digital silence on Linux.")
+    print("    → TX must be on and paired to THIS USB dongle (not only the phone).")
+    print("    → Turn off the phone or move it away — 2.4 GHz is often one receiver at a time.")
+    print("    → Re-plug dongle; run: systemctl --user restart wireplumber pipewire")
+elif peak < 0.05:
+    print("  VERDICT: weak but alive — move closer / raise TX gain.")
+elif peak > 0.95:
+    print("  VERDICT: clipping — lower gain.")
+else:
+    print("  VERDICT: Linux capture OK.")
+PY
+rm -f "$WAV"
+echo
+echo "If PipeWire mutes again after reboot, WirePlumber rule: ~/.config/wireplumber/main.lua.d/52-jieli-usb-mic.lua"

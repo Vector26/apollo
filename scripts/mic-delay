@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+# Mic echo monitor — aux-friendly mixer + delayed playback CLI.
+set -euo pipefail
+
+VOX_PY="$ORCH/.venv/bin/python"
+ORCH="$(cd "$(dirname "$(readlink -f "$0")")/../orchestrator" && pwd)"
+SCRIPT="$(dirname "$(readlink -f "$0")")/mic-delay.py"
+PYTHONPATH="$ORCH" "$VOX_PY" -c "from usb_mic_linux import apply_usb_mic_linux_fixes; apply_usb_mic_linux_fixes()" 2>/dev/null || true
+
+# Motherboard aux (ALC897 card 2): unmute common playback paths
+if amixer -c 2 sget Master &>/dev/null; then
+  amixer -c 2 set Master 87 unmute >/dev/null 2>&1 || true
+  amixer -c 2 set Front unmute >/dev/null 2>&1 || true
+  amixer -c 2 set Headphone unmute >/dev/null 2>&1 || true
+  amixer -c 2 set 'Auto-Mute Mode' Disabled >/dev/null 2>&1 || true
+fi
+
+exec "$VOX_PY" "$SCRIPT" "$@"

@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+# One-shot Linux mixer/USB setup for the Jieli wireless dongle.
+set -euo pipefail
+PY="$ORCH/.venv/bin/python"
+"$PY" - <<'PY'
+from usb_mic_linux import apply_usb_mic_linux_fixes
+import json
+print(json.dumps(apply_usb_mic_linux_fixes(), indent=2))
+PY
