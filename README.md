@@ -30,6 +30,20 @@ The main design rule is simple: use normal code wherever normal code is enough. 
 
 </div>
 
+## Memory that compounds
+
+Apollo is designed to run with [**Virtual Self Memory**](https://github.com/Vector26/virtual-self-memory), a local-first learning and analytics layer for personal agents. This is what turns Apollo from a voice interface into a system that can build continuity over months and years.
+
+- **Temporal memory** keeps authored, observed, valid and ingestion time separate, so Apollo can reason about when something happened instead of treating memory as a flat transcript.
+- **OLAP-style learning** normalises archive events into partitioned Parquet and queries them with DuckDB across time, products, domains, places and contacts.
+- **Hybrid recall** combines PostgreSQL full-text search with pgvector similarity to compile context for each turn.
+- **Provenance** links learned memories and personality changes back to their source evidence.
+- **Model independence** keeps memory outside the brain. Change the model and the accumulated self remains.
+
+The connection point is deliberately small: Virtual Self Memory serves its local API on `127.0.0.1:8090`, while Apollo keeps the voice-session lifecycle in `vself_brain.py`. Context is prepared before a reply, only spoken turns are committed, and completed sessions are handed back for consolidation.
+
+**[Explore Virtual Self Memory →](https://github.com/Vector26/virtual-self-memory)**
+
 ## What makes it different
 
 Apollo is unusual less for any single component than for how the components are separated. Speech remains responsive, tools remain constrained, and the language model can be changed without rebuilding the assistant around it. I have not found another open project with this same combination, though most of the individual ideas have prior art.
@@ -53,7 +67,7 @@ Every major part has a narrow contract. There is no required model vendor, and t
 | Speech in | audio in, text out | Parakeet on CPU (Whisper supported) | `stt.engine` |
 | Speech out | text in, audio out, per clause | Chatterbox Turbo, optional voice conversion | `tts:` and `orchestrator/voice/presets.yaml` |
 | Tools | one allowlisted operation per marker | agent gateway, Plane, reminders, notes, phone notification | handler in `agent_tools.py` |
-| Memory | `prepare`, `commit`, `end` over HTTP | Virtual Self | any service with those three calls |
+| Memory | `prepare`, `commit`, `end` over HTTP | [Virtual Self Memory](https://github.com/Vector26/virtual-self-memory) | any service with those three calls |
 
 This works in both directions. Apollo can call different agents through the gateway, and an agent can also serve as Apollo's brain. The boundary is text, not a vendor-specific tool protocol.
 
@@ -108,6 +122,8 @@ scripts/apollo talk
 ```
 
 `config.example.yaml` is the map for audio devices, model routes and integrations. Add your model assets, choose a voice, connect the services you want, and start talking.
+
+For persistent learning and OLAP analytics, pair Apollo with [Virtual Self Memory](https://github.com/Vector26/virtual-self-memory). The integration point is `brains.vself.api_url`; both projects use port `8090` by default.
 
 ## Development
 
